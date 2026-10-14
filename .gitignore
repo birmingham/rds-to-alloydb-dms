@@ -1,0 +1,63 @@
+# ---- Terraform --------------------------------------------------------------
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.tfstate.lock.info
+crash.log
+crash.*.log
+# Plan files contain every sensitive value (DB passwords, VPN pre-shared keys)
+# in plain text.
+*.tfplan
+*.plan
+tfplan
+# Real variable values and backend config; the *.example files are committed.
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+backend.hcl
+# Cached Terraform outputs for the local scripts
+.lab-env
+.lab-env.tmp
+# Local overrides
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# .terraform.lock.hcl is committed on purpose: it pins provider checksums.
+
+# ---- Cloud credentials -------------------------------------------------------
+# GCP service account keys (this repo never needs one; auth is gcloud/ADC)
+*-sa-key*.json
+*service-account*.json
+credentials.json
+application_default_credentials.json
+# AWS
+.aws/
+aws-credentials*
+# AWS site-to-site VPN configuration downloads include the pre-shared keys
+vpn-*.txt
+*VpnConfiguration*.txt
+
+# ---- Keys, certificates, env files -------------------------------------------
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+
+# ---- Database artifacts --------------------------------------------------------
+# Dumps and exports hold real (or realistic) data; db/sql/*.sql is committed.
+*.dump
+*.backup
+*.sql.gz
+*.csv
+.psql_history
+.pgpass
+
+# ---- OS / editor ---------------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp

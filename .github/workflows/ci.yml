@@ -1,0 +1,72 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [network/gcp, network/aws, vpn, database/aws_rds, database/alloydb, dms, tools]
+    defaults:
+      run:
+        working-directory: infra/${{ matrix.stack }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false
+      - run: terraform validate
+
+  shared-variables:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Every stack's common_variables.tf matches infra/common_variables.tf
+        run: |
+          status=0
+          while IFS= read -r f; do
+            diff -u infra/common_variables.tf "$f" || status=1
+          done < <(find infra -mindepth 2 -name common_variables.tf)
+          exit "$status"
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: shellcheck -x scripts/*.sh db/*.sh
+
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: ci
+      PGTZ: UTC
+    steps:
+      - uses: actions/checkout@v5
+      - name: Schema and seed data load cleanly
+        run: |
+          psql -v ON_ERROR_STOP=1 -c "create database shop" -c "create role rds_replication"
+          psql -v ON_ERROR_STOP=1 -d shop -f db/sql/schema.sql
+          psql -v ON_ERROR_STOP=1 -d shop -v scale=1 -f db/sql/seed.sql
+          test "$(psql -tAc 'select count(*) from order_items' -d shop)" = "600000"
+          test "$(psql -tAc 'select count(*) from orders o where total_cents <> (select sum(quantity*unit_price_cents) from order_items where order_id = o.id)' -d shop)" = "0"
+      - name: DMS user setup is idempotent
+        run: |
+          for _ in 1 2; do DMS_PW=ci-test psql -v ON_ERROR_STOP=1 -d postgres -v dms_user=dms_user -f db/sql/dms-user.sql; done

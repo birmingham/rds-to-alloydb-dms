@@ -1,0 +1,7 @@
+# Copy to common.tfvars (gitignored). scripts/tf.sh passes it to every stack.
+project_id   = "your-gcp-project-id"
+state_bucket = "your-tf-state-bucket"
+name         = "dms-lab"
+gcp_region   = "us-west1"
+gcp_zone     = "us-west1-a"
+aws_region   = "us-west-2"
