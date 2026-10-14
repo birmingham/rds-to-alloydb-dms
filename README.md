@@ -152,8 +152,8 @@ build its security group, so nothing is copied by hand between stacks.
 | # | Stack | Creates | Plan | Approx. time |
 |---|---|---|---|---|
 | 1 | `network/gcp` | APIs, VPC, tools subnet, IAP firewall, Cloud Router with the PSA advertisement, Cloud NAT, PSA range + route export | 14 to add | 2–3 min |
-| 2 | `network/aws` | VPC, 2 private subnets, route table, VGW with route propagation | 8 to add | 1 min |
-| 3 | `vpn` | 2 customer gateways, 2 AWS VPN connections, HA VPN gateway, external gateway, 4 tunnels, 4 router interfaces, 4 BGP peers, 4 pre-shared keys | 22 to add | 5 min |
+| 2 | `network/aws` | VPC, 2 private subnets, route table, VGW with route propagation | 8 to add | 2-3 min |
+| 3 | `vpn` | 2 customer gateways, 2 AWS VPN connections, HA VPN gateway, external gateway, 4 tunnels, 4 router interfaces, 4 BGP peers, 4 pre-shared keys | 22 to add | aws ~ 8 min, gcp ~ 2-3 min |
 | 4 | `database/aws_rds` | Parameter group, subnet group, security group, RDS instance, admin password secret | 7 to add | 10 min |
 | 5 | `database/alloydb` | AlloyDB cluster + primary instance, postgres password secret | 5 to add | 15–20 min |
 | 6 | `dms` | DMS user password secret, source + destination connection profiles, migration job | 6 to add | 1 min |

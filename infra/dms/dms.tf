@@ -5,13 +5,19 @@
 resource "google_database_migration_service_connection_profile" "source" {
   location              = var.gcp_region
   connection_profile_id = "${var.name}-source-rds"
-  display_name          = "RDS PostgreSQL (${var.aws_region})"
+  # DMS rejects "special characters" such as parentheses in display names;
+  # letters, digits, spaces and hyphens are fine.
+  display_name = "RDS PostgreSQL ${var.aws_region}"
 
   postgresql {
     host     = local.rds.address
     port     = local.rds.port
     username = local.dms_user
     password = random_password.dms_user.result
+
+    # Required by the API: the database DMS connects to first. DMS still
+    # migrates every database on the instance (except template0/1, rdsadmin).
+    database = "postgres"
 
     # RDS for PostgreSQL 15+ forces SSL by default. REQUIRED encrypts without
     # verifying the server certificate; traffic is also inside IPsec.

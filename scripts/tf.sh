@@ -72,9 +72,15 @@ run_stack() {
   case "$cmd" in
     apply)
       if [[ -n "$plan_file" ]]; then
-        terraform -chdir="$INFRA/$stack" apply "$@"
-        # Plan files hold every sensitive value in plain text; don't leave them around.
+        # Plan files hold every sensitive value in plain text, and after an
+        # apply (successful or not) the plan is spent: delete it either way.
+        local status=0
+        terraform -chdir="$INFRA/$stack" apply "$@" || status=$?
         rm -f "$INFRA/$stack/$plan_file"
+        if (( status != 0 )); then
+          echo "$stack: apply failed; fix the error, then plan again (the plan file was removed)" >&2
+          exit "$status"
+        fi
       else
         terraform -chdir="$INFRA/$stack" apply -var-file="$VARS" "$@"
       fi ;;
