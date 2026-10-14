@@ -3,7 +3,8 @@
 #
 #   scripts/tf.sh <stack> <command> [terraform args...]
 #   scripts/tf.sh <stack> check          fmt -check + init + validate
-#   scripts/tf.sh all     <check|fmt|init|validate|plan|apply|destroy>
+#   scripts/tf.sh <stack> lock           record provider checksums for every platform
+#   scripts/tf.sh all     <check|lock|fmt|init|validate|plan|apply|destroy>
 #
 # Reviewed workflow (what you apply is exactly what you reviewed):
 #   scripts/tf.sh infra/network/gcp plan -out=tfplan
@@ -20,6 +21,9 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 INFRA="$ROOT/infra"
 VARS="$INFRA/common.tfvars"
 ORDER=(network/gcp network/aws vpn database/aws_rds database/alloydb dms tools)
+# Platforms recorded in .terraform.lock.hcl: Apple Silicon and Intel Macs, and
+# the Linux runners CI uses.
+LOCK_PLATFORMS=(darwin_arm64 darwin_amd64 linux_amd64)
 
 die() { echo "$*" >&2; exit 1; }
 [[ $# -ge 2 ]] || die "usage: $0 <stack|all> <command> [args...]"
@@ -53,6 +57,11 @@ run_stack() {
     return
   fi
   [[ -d "$INFRA/$stack/.terraform" ]] || init_stack "$stack" >/dev/null
+
+  if [[ "$cmd" == "lock" ]]; then
+    terraform -chdir="$INFRA/$stack" providers lock "${LOCK_PLATFORMS[@]/#/-platform=}" "$@"
+    return
+  fi
 
   # A saved plan already contains its variables; Terraform rejects -var-file with one.
   local plan_file=""
@@ -89,10 +98,10 @@ fi
 
 cmd="$1"; shift
 case "$cmd" in
-  check|fmt|init|validate|plan|apply)
+  check|lock|fmt|init|validate|plan|apply)
     for s in "${ORDER[@]}"; do run_stack "$s" "$cmd" "$@"; done ;;
   destroy)
     for (( i=${#ORDER[@]}-1; i>=0; i-- )); do run_stack "${ORDER[$i]}" destroy "$@"; done ;;
   *)
-    die "'all' supports check, fmt, init, validate, plan, apply, destroy" ;;
+    die "'all' supports check, lock, fmt, init, validate, plan, apply, destroy" ;;
 esac

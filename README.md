@@ -195,6 +195,28 @@ If formatting differs, the script stops and prints the fix:
 `validate` needs no cloud access and no upstream state, so the whole check
 works before anything exists.
 
+**Record provider checksums for every platform.** The first `init` in each
+stack creates a `.terraform.lock.hcl` that pins the exact google, aws, and
+random provider versions. These files are committed, so CI and every later
+run use the same providers you validated with. But `init` only records
+checksums for the machine it ran on. Run this once after the first check, and
+again after any provider upgrade (`terraform init -upgrade`):
+
+```bash
+scripts/tf.sh all lock
+```
+
+This adds checksums for `darwin_arm64` (Apple Silicon), `darwin_amd64`
+(Intel Macs), and `linux_amd64` (the GitHub Actions runners) to all seven
+lock files. Without it, CI on Linux has to fill in its own entries on every
+run, and someone cloning the repo on a different platform gets lock-file
+changes they didn't make. Commit the result:
+
+```bash
+git add infra/*/.terraform.lock.hcl infra/*/*/.terraform.lock.hcl
+git commit -m "Lock provider checksums for macOS and Linux"
+```
+
 **Then plan, review, and apply one stack at a time.** Unlike `validate`,
 `plan` can't run for all seven up front: each stack reads the outputs of the
 stacks before it, and those don't exist until they're applied. So for each
