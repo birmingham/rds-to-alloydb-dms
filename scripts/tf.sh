@@ -6,9 +6,11 @@
 #   scripts/tf.sh all     <check|fmt|init|validate|plan|apply|destroy>
 #
 # Reviewed workflow (what you apply is exactly what you reviewed):
-#   scripts/tf.sh <stack> plan -out=tfplan
-#   scripts/tf.sh <stack> apply tfplan     # the plan file is deleted afterwards
+#   scripts/tf.sh infra/network/gcp plan -out=tfplan
+#   scripts/tf.sh infra/network/gcp apply tfplan   # the plan file is deleted afterwards
 #
+# <stack> is the stack's folder: infra/network/gcp, or just network/gcp
+# (a trailing slash from tab completion is fine).
 # Stacks: network/gcp network/aws vpn database/aws_rds database/alloydb dms tools
 # Each stack has its own state at gs://<state_bucket>/<state_prefix>/<stack>.
 # infra/common.tfvars supplies the shared variables to every stack.
@@ -36,14 +38,14 @@ init_stack() {
 
 run_stack() {
   local stack="$1" cmd="$2"; shift 2
-  [[ -d "$INFRA/$stack" ]] || die "unknown stack: $stack (one of: ${ORDER[*]})"
+  [[ -d "$INFRA/$stack" ]] || die "unknown stack: $stack (one of: ${ORDER[*]/#/infra/})"
   echo; echo "=== $stack: terraform $cmd"
   if [[ "$cmd" == "init" ]]; then
     init_stack "$stack" "$@"; return
   fi
   if [[ "$cmd" == "check" ]]; then
     terraform -chdir="$INFRA/$stack" fmt -check -diff \
-      || die "$stack: formatting differs; fix with: scripts/tf.sh $stack fmt"
+      || die "$stack: formatting differs; fix with: scripts/tf.sh infra/$stack fmt"
     echo "fmt: ok"
     init_stack "$stack" >/dev/null
     echo "init: ok (state: gs://$bucket/$prefix/$stack)"
@@ -77,7 +79,9 @@ run_stack() {
   return 0
 }
 
+# Accept "infra/network/gcp", "./infra/network/gcp/" or "network/gcp".
 stack="$1"; shift
+stack="${stack#./}"; stack="${stack#infra/}"; stack="${stack%/}"
 if [[ "$stack" != "all" ]]; then
   run_stack "$stack" "$@"
   exit

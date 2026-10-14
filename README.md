@@ -191,7 +191,7 @@ Success! The configuration is valid.
 ```
 
 If formatting differs, the script stops and prints the fix:
-`scripts/tf.sh <stack> fmt` rewrites the files, then run the check again.
+`scripts/tf.sh infra/<stack> fmt` rewrites the files, then run the check again.
 `validate` needs no cloud access and no upstream state, so the whole check
 works before anything exists.
 
@@ -201,26 +201,26 @@ stacks before it, and those don't exist until they're applied. So for each
 stack, in order, save the plan, read it, then apply exactly that plan:
 
 ```bash
-scripts/tf.sh network/gcp plan -out=tfplan       # review: Plan: 14 to add
-scripts/tf.sh network/gcp apply tfplan
+scripts/tf.sh infra/network/gcp plan -out=tfplan       # review: Plan: 14 to add
+scripts/tf.sh infra/network/gcp apply tfplan
 
-scripts/tf.sh network/aws plan -out=tfplan       # review: Plan: 8 to add
-scripts/tf.sh network/aws apply tfplan
+scripts/tf.sh infra/network/aws plan -out=tfplan       # review: Plan: 8 to add
+scripts/tf.sh infra/network/aws apply tfplan
 
-scripts/tf.sh vpn plan -out=tfplan               # review: Plan: 22 to add
-scripts/tf.sh vpn apply tfplan
+scripts/tf.sh infra/vpn plan -out=tfplan               # review: Plan: 22 to add
+scripts/tf.sh infra/vpn apply tfplan
 
-scripts/tf.sh database/aws_rds plan -out=tfplan  # review: Plan: 7 to add
-scripts/tf.sh database/aws_rds apply tfplan
+scripts/tf.sh infra/database/aws_rds plan -out=tfplan  # review: Plan: 7 to add
+scripts/tf.sh infra/database/aws_rds apply tfplan
 
-scripts/tf.sh database/alloydb plan -out=tfplan  # review: Plan: 5 to add
-scripts/tf.sh database/alloydb apply tfplan
+scripts/tf.sh infra/database/alloydb plan -out=tfplan  # review: Plan: 5 to add
+scripts/tf.sh infra/database/alloydb apply tfplan
 
-scripts/tf.sh dms plan -out=tfplan               # review: Plan: 6 to add
-scripts/tf.sh dms apply tfplan
+scripts/tf.sh infra/dms plan -out=tfplan               # review: Plan: 6 to add
+scripts/tf.sh infra/dms apply tfplan
 
-scripts/tf.sh tools plan -out=tfplan             # review: Plan: 6 to add
-scripts/tf.sh tools apply tfplan
+scripts/tf.sh infra/tools plan -out=tfplan             # review: Plan: 6 to add
+scripts/tf.sh infra/tools apply tfplan
 ```
 
 Applying a saved plan doesn't ask for confirmation, because you already
@@ -230,7 +230,7 @@ generated password and VPN pre-shared key in plain text (they're also
 gitignored). If a plan shows anything other than the expected number of
 additions on a fresh build, stop and investigate before applying.
 
-`scripts/tf.sh <stack> apply` without a plan file also works; it plans and
+`scripts/tf.sh infra/<stack> apply` without a plan file also works; it plans and
 asks for `yes` in one step.
 
 The two network stacks don't depend on each other, and neither do the two
@@ -284,7 +284,7 @@ Source ready for DMS.
 
 If it reports that `shared_preload_libraries` doesn't include `pglogical`,
 reboot the instance once (the command is printed; the identifier comes from
-`scripts/tf.sh database/aws_rds output identifier`) and run it again.
+`scripts/tf.sh infra/database/aws_rds output identifier`) and run it again.
 
 ### 4. Demote, verify, and start the migration
 
@@ -349,7 +349,7 @@ aren't migrated either; recreate application users on AlloyDB.
   "correct" it. The other stacks are safe to re-apply.
 - **Starting over:** the destination must be empty, so after a completed or
   failed run, recreate it with
-  `scripts/tf.sh dms destroy && scripts/tf.sh database/alloydb destroy`,
+  `scripts/tf.sh infra/dms destroy && scripts/tf.sh infra/database/alloydb destroy`,
   then apply both again. The networks, VPN, and RDS stay up.
 
 ## Security posture
@@ -382,7 +382,7 @@ scripts/tf.sh all destroy     # tools -> dms -> databases -> vpn -> networks
 ```
 
 `all destroy` runs the stacks in reverse dependency order and prompts for
-each one. To destroy a single stack, run `scripts/tf.sh <stack> destroy`,
+each one. To destroy a single stack, run `scripts/tf.sh infra/<stack> destroy`,
 but only once every stack that reads from it is already gone.
 
 ## Limits
