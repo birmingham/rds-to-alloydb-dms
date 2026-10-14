@@ -17,6 +17,8 @@ and handle cutover.
 - [Troubleshooting](#troubleshooting)
 - [Security posture](#security-posture)
 - [Cost and teardown](#cost-and-teardown)
+  - [If `network/gcp` fails to destroy the AlloyDB peering](#if-networkgcp-fails-to-destroy-the-alloydb-peering)
+  - [Confirm nothing is left](#confirm-nothing-is-left)
 - [Limits](#limits)
 
 ## Architecture
@@ -104,6 +106,7 @@ scripts/                  run on your laptop
   vm.sh                   copy db/ to the VM and run a script there over IAP
   check-vpn.sh            tunnels, BGP sessions, learned routes on both clouds
   dms.sh                  verify | demote | start | status | watch | promote
+  verify-teardown.sh      after a destroy: confirm nothing is left in either cloud
 ```
 
 The mock data is an e-commerce schema: 50,000 customers, 5,000 products,
@@ -152,8 +155,8 @@ build its security group, so nothing is copied by hand between stacks.
 | # | Stack | Creates | Plan | Approx. time |
 |---|---|---|---|---|
 | 1 | `network/gcp` | APIs, VPC, tools subnet, IAP firewall, Cloud Router with the PSA advertisement, Cloud NAT, PSA range + route export | 14 to add | 2–3 min |
-| 2 | `network/aws` | VPC, 2 private subnets, route table, VGW with route propagation | 8 to add | 2-3 min |
-| 3 | `vpn` | 2 customer gateways, 2 AWS VPN connections, HA VPN gateway, external gateway, 4 tunnels, 4 router interfaces, 4 BGP peers, 4 pre-shared keys | 22 to add | aws ~ 8 min, gcp ~ 2-3 min |
+| 2 | `network/aws` | VPC, 2 private subnets, route table, VGW with route propagation | 8 to add | 1 min |
+| 3 | `vpn` | 2 customer gateways, 2 AWS VPN connections, HA VPN gateway, external gateway, 4 tunnels, 4 router interfaces, 4 BGP peers, 4 pre-shared keys | 22 to add | 5 min |
 | 4 | `database/aws_rds` | Parameter group, subnet group, security group, RDS instance, admin password secret | 7 to add | 10 min |
 | 5 | `database/alloydb` | AlloyDB cluster + primary instance, postgres password secret | 5 to add | 15–20 min |
 | 6 | `dms` | DMS user password secret, source + destination connection profiles, migration job | 6 to add | 1 min |
@@ -399,13 +402,87 @@ is the largest part, then 4 GCP VPN tunnels, 2 AWS VPN connections, RDS
 `alloydb_availability_type = "ZONAL"` roughly halves the AlloyDB cost. DMS
 itself has no charge for homogeneous migrations.
 
+### Tear down everything
+
 ```bash
-scripts/tf.sh all destroy     # tools -> dms -> databases -> vpn -> networks
+scripts/tf.sh all destroy                  # prompts for each of the 7 stacks
+scripts/tf.sh all destroy -auto-approve    # unattended: no prompts
 ```
 
-`all destroy` runs the stacks in reverse dependency order and prompts for
-each one. To destroy a single stack, run `scripts/tf.sh infra/<stack> destroy`,
-but only once every stack that reads from it is already gone.
+`all destroy` runs the stacks in reverse dependency order: **tools → dms →
+database/alloydb → database/aws_rds → vpn → network/aws → network/gcp**.
+Expect 25–30 minutes in total. AlloyDB and RDS take about 10 minutes each, and
+the AWS VPN connections a few minutes.
+
+`-auto-approve` is passed to every stack, so you can start the teardown and
+walk away. It skips the review of each destroy plan, which is fine for this
+lab, where everything is meant to go. Don't use it anywhere you'd only want to
+remove part of an environment.
+
+To destroy a single stack, run `scripts/tf.sh infra/<stack> destroy`, but only
+once every stack that reads from it is already gone.
+
+**The AlloyDB peering takes a few minutes to release.** After AlloyDB is
+deleted, Google can take several minutes to release the private services
+access peering between the VPC and the service producer network. Until it
+does, destroying `network/gcp` fails at the very end with an error that the
+PSA range or the VPC is still in use by `servicenetworking`. `tf.sh` handles
+this automatically: if the `network/gcp` destroy fails, it waits 2 minutes,
+removes the peering, and retries, up to 3 attempts. You'll see:
+
+```
+network/gcp: destroy failed (attempt 1/3). Usually Google hasn't released the
+AlloyDB peering yet. Waiting 2 minutes, removing the peering, and retrying...
+```
+
+If all 3 attempts fail, read the error above that message. To do the same
+steps by hand:
+
+```bash
+gcloud services vpc-peerings delete --network=dms-lab-vpc \
+  --service=servicenetworking.googleapis.com --project "$PROJECT"
+scripts/tf.sh infra/network/gcp destroy
+```
+
+### Confirm nothing is left
+
+```bash
+scripts/verify-teardown.sh
+```
+
+It checks both clouds for anything carrying the lab's name prefix: the DMS
+jobs and profiles, AlloyDB, VMs, VPN tunnels and gateways, routers, the PSA
+range, VPCs, secrets, and service accounts in Google Cloud; RDS instances,
+parameter and subnet groups, VPN connections, customer and virtual private
+gateways, and VPCs in AWS. It reads `infra/common.tfvars` directly, so it
+works even after the Terraform state is empty. A clean teardown ends with:
+
+```
+== Google Cloud (your-project, us-west1)
+  DMS migration jobs                 none
+  AlloyDB clusters                   none
+  ...
+== AWS (us-west-2)
+  RDS instances                      none
+  VPN connections                    none
+  ...
+
+Clean: nothing from 'dms-lab' is left in either cloud.
+```
+
+Anything left is listed as `LEFT:` with its name or ID, and the script exits
+non-zero. Run `scripts/tf.sh all destroy` again (it's safe to repeat), or
+delete the listed items by hand.
+
+**What deliberately stays,** at no meaningful cost: the Terraform state
+bucket (nearly empty after a destroy), the enabled Google APIs (free), and
+your local `infra/common.tfvars`. The Secret Manager secrets are managed by
+the stacks, so they're destroyed too, and the next apply generates new
+passwords.
+
+**Coming back later:** apply the seven stacks again, run
+`scripts/check-vpn.sh`, then `scripts/vm.sh bootstrap-source.sh` to reload the
+data. AlloyDB starts empty, which is exactly what `dms.sh demote` needs.
 
 ## Limits
 

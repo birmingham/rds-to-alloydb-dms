@@ -5,6 +5,7 @@
 #   scripts/tf.sh <stack> check          fmt -check + init + validate
 #   scripts/tf.sh <stack> lock           record provider checksums for every platform
 #   scripts/tf.sh all     <check|lock|fmt|init|validate|plan|apply|destroy>
+#   scripts/tf.sh all destroy -auto-approve      unattended teardown, no prompts
 #
 # Reviewed workflow (what you apply is exactly what you reviewed):
 #   scripts/tf.sh infra/network/gcp plan -out=tfplan
@@ -29,8 +30,9 @@ die() { echo "$*" >&2; exit 1; }
 [[ $# -ge 2 ]] || die "usage: $0 <stack|all> <command> [args...]"
 [[ -f "$VARS" ]] || die "missing $VARS: cp infra/common.tfvars.example infra/common.tfvars and edit it"
 
-bucket="$(sed -n 's/^state_bucket *= *"\(.*\)".*/\1/p' "$VARS")"
-prefix="$(sed -n 's/^state_prefix *= *"\(.*\)".*/\1/p' "$VARS")"
+tfvar() { sed -n "s/^$1 *= *\"\(.*\)\".*/\1/p" "$VARS"; }
+bucket="$(tfvar state_bucket)"
+prefix="$(tfvar state_prefix)"
 prefix="${prefix:-rds-to-alloydb-dms}"
 [[ -n "$bucket" ]] || die "state_bucket is not set in $VARS"
 
@@ -38,6 +40,28 @@ init_stack() {
   local stack="$1"; shift
   terraform -chdir="$INFRA/$stack" init -input=false \
     -backend-config="bucket=$bucket" -backend-config="prefix=$prefix/$stack" "$@"
+}
+
+# network/gcp destroy can fail at the very end: Google may take several
+# minutes after AlloyDB is deleted to release the private services access
+# peering, and until then the PSA range and the VPC count as "in use".
+# Wait, remove the peering, and retry, so unattended teardowns still finish.
+destroy_network_gcp() {
+  local project name attempt
+  project="$(tfvar project_id)"
+  name="$(tfvar name)"; name="${name:-dms-lab}"
+  for attempt in 1 2 3; do
+    if terraform -chdir="$INFRA/network/gcp" destroy -var-file="$VARS" "$@"; then
+      return 0
+    fi
+    (( attempt == 3 )) && break
+    echo "network/gcp: destroy failed (attempt $attempt/3). Usually Google hasn't released the" >&2
+    echo "AlloyDB peering yet. Waiting 2 minutes, removing the peering, and retrying..." >&2
+    sleep "${PEERING_RETRY_WAIT:-120}"
+    gcloud services vpc-peerings delete --network="$name-vpc" \
+      --service=servicenetworking.googleapis.com --project "$project" --quiet || true
+  done
+  die "network/gcp: destroy still failing after 3 attempts; see the error above"
 }
 
 run_stack() {
@@ -84,7 +108,13 @@ run_stack() {
       else
         terraform -chdir="$INFRA/$stack" apply -var-file="$VARS" "$@"
       fi ;;
-    plan|destroy|import|refresh|console)
+    destroy)
+      if [[ "$stack" == "network/gcp" ]]; then
+        destroy_network_gcp "$@"
+      else
+        terraform -chdir="$INFRA/$stack" destroy -var-file="$VARS" "$@"
+      fi ;;
+    plan|import|refresh|console)
       terraform -chdir="$INFRA/$stack" "$cmd" -var-file="$VARS" "$@" ;;
     *)
       terraform -chdir="$INFRA/$stack" "$cmd" "$@" ;;
